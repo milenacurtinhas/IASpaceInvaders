@@ -15,137 +15,215 @@ class HumanAgent(Agent):
         # O estado é ignorado - entrada vem do teclado
         return 0  # Padrão: não fazer nada (será sobrescrito pela entrada do usuário no manual_play.py)
 
-# Funções de ativação para a rede neural
-def tanh(x):
-    return np.tanh(x)
-
-def softmax(x):
-    e_x = np.exp(x - np.max(x))
-    return e_x / e_x.sum()
-
-class SimpleNeuralNetwork:
-    """Rede neural totalmente conectada com bias"""
-    def __init__(self, input_size=27, hidden_sizes=[32, 16], output_size=3):
-        # Inicialização dos pesos (com bias)
-        # Camada 1: entrada (27) + bias (1) -> 32 neurônios
-        # Camada 2: 32 + bias (1) -> 16 neurônios  
-        # Camada 3: 16 + bias (1) -> 3 neurônios de saída
+class NeuralNetworkAgent(Agent):
+    """Agente baseado em rede neural otimizada para o jogo de sobrevivência"""
+    
+    def __init__(self, weights: np.ndarray = None):
+        """
+        Inicializa o agente da rede neural.
+        
+        Args:
+            weights: Array com os pesos da rede neural (611 valores)
+                    Se None, inicializa com pesos aleatórios usando Xavier
+        """
+        # Arquitetura otimizada da rede neural
         self.layer_sizes = [
-            (input_size + 1, hidden_sizes[0]),    # 28 x 32
-            (hidden_sizes[0] + 1, hidden_sizes[1]), # 33 x 16
-            (hidden_sizes[1] + 1, output_size)     # 17 x 3
+            (28, 16),  # Entrada: 27 sensores + 1 bias → 16 neurônios
+            (17, 8),   # Oculta: 16 + 1 bias → 8 neurônios  
+            (9, 3)     # Saída: 8 + 1 bias → 3 ações
         ]
         
-        # Inicialização aleatória dos pesos
-        self.layers = []
-        for size in self.layer_sizes:
-            self.layers.append(np.random.randn(size[0], size[1]) * 0.1)
-
-    def forward(self, x):
-        """Propagação direta"""
-        # Primeira camada oculta
-        x = np.append(x, 1.0)  # adiciona bias
-        z1 = tanh(np.dot(x, self.layers[0]))
+        # Total de pesos: 28*16 + 17*8 + 9*3 = 448 + 136 + 27 = 611
+        self.total_weights = self._calculate_total_weights()
         
-        # Segunda camada oculta
-        z1 = np.append(z1, 1.0)  # adiciona bias
-        z2 = tanh(np.dot(z1, self.layers[1]))
-        
-        # Camada de saída
-        z2 = np.append(z2, 1.0)  # adiciona bias
-        output = softmax(np.dot(z2, self.layers[2]))
-        
-        return output
-
-    def get_weights(self):
-        """Retorna todos os pesos como um vetor unidimensional"""
-        return np.concatenate([w.flatten() for w in self.layers])
-
-    def set_weights(self, weights):
-        """Atualiza a rede a partir de um vetor de pesos"""
-        idx = 0
-        self.layers = []
-        
-        for size in self.layer_sizes:
-            w_size = np.prod(size)
-            self.layers.append(weights[idx:idx+w_size].reshape(size))
-            idx += w_size
-
-class NeuralNetworkAgent(Agent):
-    """Agente baseado em rede neural"""
-    def __init__(self, weights=None):
-        self.model = SimpleNeuralNetwork()
         if weights is not None:
-            self.model.set_weights(weights)
+            if len(weights) != self.total_weights:
+                raise ValueError(f"Esperado {self.total_weights} pesos, recebido {len(weights)}")
+            self.weights = weights.copy()
+        else:
+            # Inicialização Xavier para redes com tanh
+            self.weights = self._initialize_xavier()
+        
+        # Converte os pesos em matrizes para cada camada
+        self.layers = self._weights_to_layers()
+    
+    def _calculate_total_weights(self) -> int:
+        """Calcula o número total de pesos necessários"""
+        return sum(input_size * output_size for input_size, output_size in self.layer_sizes)
+    
+    def _initialize_xavier(self) -> np.ndarray:
+        """Inicialização Xavier/Glorot para ativação tanh"""
+        weights = []
+        
+        for input_size, output_size in self.layer_sizes:
+            # Limite Xavier: sqrt(6 / (fan_in + fan_out))
+            limit = np.sqrt(6.0 / (input_size + output_size))
+            layer_weights = np.random.uniform(-limit, limit, input_size * output_size)
+            weights.extend(layer_weights)
+        
+        return np.array(weights)
+    
+    def _weights_to_layers(self) -> List[np.ndarray]:
+        """Converte o array de pesos em matrizes de camadas"""
+        layers = []
+        start_idx = 0
+        
+        for input_size, output_size in self.layer_sizes:
+            end_idx = start_idx + (input_size * output_size)
+            layer_weights = self.weights[start_idx:end_idx]
+            # Reshape para matriz (input_size, output_size)
+            layer_matrix = layer_weights.reshape(input_size, output_size)
+            layers.append(layer_matrix)
+            start_idx = end_idx
+        
+        return layers
+    
+    def _tanh(self, x: np.ndarray) -> np.ndarray:
+        """Função de ativação tanh com clipping para estabilidade"""
+        x_clipped = np.clip(x, -500, 500)  # Evita overflow
+        return np.tanh(x_clipped)
+    
+    def _softmax(self, x: np.ndarray) -> np.ndarray:
+        """Função softmax para camada de saída"""
+        x_shifted = x - np.max(x)  # Estabilidade numérica
+        exp_values = np.exp(x_shifted)
+        return exp_values / np.sum(exp_values)
     
     def predict(self, state: np.ndarray) -> int:
-        """Prediz a ação baseada no estado atual"""
-        output = self.model.forward(state)
-        return int(np.argmax(output))
+        """
+        Faz uma previsão de ação com base no estado atual.
+        
+        Args:
+            state: Estado do jogo (27 valores dos sensores)
+            
+        Returns:
+            int: Ação escolhida (0=parado, 1=cima, 2=baixo)
+        """
+        if len(state) != 27:
+            raise ValueError(f"Estado deve ter 27 valores, recebido {len(state)}")
+        
+        # Forward pass pela rede neural
+        
+        # Camada 1: Entrada → Oculta 1
+        # Adiciona bias (1.0) ao estado de entrada
+        x = np.append(state, 1.0)  # 28 valores
+        z1 = self._tanh(np.dot(x, self.layers[0]))  # 16 valores
+        
+        # Camada 2: Oculta 1 → Oculta 2  
+        # Adiciona bias à primeira camada oculta
+        z1_with_bias = np.append(z1, 1.0)  # 17 valores
+        z2 = self._tanh(np.dot(z1_with_bias, self.layers[1]))  # 8 valores
+        
+        # Camada 3: Oculta 2 → Saída
+        # Adiciona bias à segunda camada oculta
+        z2_with_bias = np.append(z2, 1.0)  # 9 valores
+        output = self._softmax(np.dot(z2_with_bias, self.layers[2]))  # 3 valores
+        
+        # Retorna a ação com maior probabilidade
+        return np.argmax(output)
+    
+    def get_action_probabilities(self, state: np.ndarray) -> np.ndarray:
+        """
+        Retorna as probabilidades de cada ação em vez da ação escolhida.
+        Útil para análise e debugging.
+        
+        Args:
+            state: Estado do jogo (27 valores)
+            
+        Returns:
+            np.ndarray: Probabilidades das 3 ações [parado, cima, baixo]
+        """
+        if len(state) != 27:
+            raise ValueError(f"Estado deve ter 27 valores, recebido {len(state)}")
+        
+        # Forward pass (mesmo código do predict)
+        x = np.append(state, 1.0)
+        z1 = self._tanh(np.dot(x, self.layers[0]))
+        z1_with_bias = np.append(z1, 1.0)
+        z2 = self._tanh(np.dot(z1_with_bias, self.layers[1]))
+        z2_with_bias = np.append(z2, 1.0)
+        output = self._softmax(np.dot(z2_with_bias, self.layers[2]))
+        
+        return output
+    
+    def update_weights(self, new_weights: np.ndarray):
+        """
+        Atualiza os pesos da rede neural.
+        Útil durante o treinamento com algoritmo dos morcegos.
+        
+        Args:
+            new_weights: Novos pesos (611 valores)
+        """
+        if len(new_weights) != self.total_weights:
+            raise ValueError(f"Esperado {self.total_weights} pesos, recebido {len(new_weights)}")
+        
+        self.weights = new_weights.copy()
+        self.layers = self._weights_to_layers()
+    
+    def get_weights(self) -> np.ndarray:
+        """Retorna uma cópia dos pesos atuais"""
+        return self.weights.copy()
+    
+    def get_network_info(self) -> dict:
+        """
+        Retorna informações sobre a arquitetura da rede.
+        Útil para debugging e logging.
+        """
+        return {
+            'layer_sizes': self.layer_sizes,
+            'total_weights': self.total_weights,
+            'weights_per_layer': [input_size * output_size 
+                                for input_size, output_size in self.layer_sizes],
+            'architecture': '27+1 → 16 → 8 → 3'
+        }
 
-class BatAlgorithmTrainer:
-    """Implementação do Algoritmo dos Morcegos para otimização"""
-    def __init__(self, pop_size, num_iterations, game_eval_fn,
-                 weight_dim, fmin=0, fmax=2, alpha=0.9, gamma=0.9):
-        self.pop_size = pop_size
-        self.num_iterations = num_iterations
-        self.game_eval_fn = game_eval_fn
-        self.weight_dim = weight_dim
-        self.fmin = fmin
-        self.fmax = fmax
-        self.alpha = alpha
-        self.gamma = gamma
-
-    def optimize(self):
-        """Executa uma iteração do algoritmo dos morcegos"""
-        # Inicialização da população
-        bats = np.random.uniform(-1, 1, (self.pop_size, self.weight_dim))
-        velocities = np.zeros_like(bats)
-        freq = np.zeros(self.pop_size)
-        loudness = np.random.uniform(1, 2, self.pop_size)  # A0
-        pulse_rate = np.random.uniform(0, 1, self.pop_size)  # r0
-
-        # Avaliação inicial
-        print("Avaliando população inicial...")
-        fitness = np.array([self.game_eval_fn(b) for b in bats])
-        best_idx = np.argmax(fitness)
-        best_bat = bats[best_idx].copy()
-        best_fit = fitness[best_idx]
-
-        print(f"Melhor fitness inicial: {best_fit:.2f}")
-
-        for t in range(self.num_iterations):
-            for i in range(self.pop_size):
-                # Atualiza frequência (Eq. 2 do artigo)
-                beta = np.random.rand()
-                freq[i] = self.fmin + (self.fmax - self.fmin) * beta
-                
-                # Atualiza velocidade e posição (Eq. 3 e 4)
-                velocities[i] = velocities[i] + (bats[i] - best_bat) * freq[i]
-                new_bat = bats[i] + velocities[i]
-
-                # Busca local (Eq. 5)
-                if np.random.rand() > pulse_rate[i]:
-                    # Gera solução local ao redor da melhor atual
-                    epsilon = np.random.uniform(-1, 1, self.weight_dim)
-                    avg_loudness = np.mean(loudness)
-                    new_bat = best_bat + epsilon * avg_loudness
-
-                # Avaliação da nova solução
-                new_fitness = self.game_eval_fn(new_bat)
-
-                # Critério de aceitação
-                if np.random.rand() < loudness[i] and new_fitness > fitness[i]:
-                    bats[i] = new_bat
-                    fitness[i] = new_fitness
-                    
-                    # Atualiza loudness e pulse rate (Eq. 6)
-                    loudness[i] *= self.alpha
-                    pulse_rate[i] = pulse_rate[i] * (1 - np.exp(-self.gamma * t))
-
-                # Atualiza melhor global
-                if new_fitness > best_fit:
-                    best_fit = new_fitness
-                    best_bat = new_bat.copy()
-
-        return best_bat, best_fit
+class RuleBasedAgent(Agent):
+    """
+    Agente baseado em regras para comparação.
+    Mantido do código original do algoritmo genético.
+    """
+    
+    def __init__(self, danger_threshold: float = 5.0, 
+                 lookahead_cells: int = 3, 
+                 diff_to_center_to_move: float = 2.0):
+        """
+        Args:
+            danger_threshold: Distância mínima para considerar obstáculo perigoso
+            lookahead_cells: Quantas células à frente verificar
+            diff_to_center_to_move: Diferença do centro necessária para se mover
+        """
+        self.danger_threshold = danger_threshold
+        self.lookahead_cells = int(lookahead_cells)
+        self.diff_to_center_to_move = diff_to_center_to_move
+    
+    def predict(self, state: np.ndarray) -> int:
+        """
+        Lógica baseada em regras para decidir ação.
+        
+        Returns:
+            0: Ficar parado
+            1: Mover para cima  
+            2: Mover para baixo
+        """
+        # Implementação simplificada - pode ser expandida conforme necessário
+        # Esta é uma versão básica para manter compatibilidade
+        
+        # Analisa os sensores do estado (assumindo que os primeiros valores são posições)
+        if len(state) < 3:
+            return 0
+        
+        # Lógica simples: se há obstáculo próximo, move
+        danger_detected = np.any(state[:self.lookahead_cells] < self.danger_threshold)
+        
+        if danger_detected:
+            # Move baseado na posição relativa ao centro
+            player_y_relative = state[0] if len(state) > 0 else 0
+            
+            if player_y_relative > self.diff_to_center_to_move:
+                return 2  # Mover para baixo
+            elif player_y_relative < -self.diff_to_center_to_move:
+                return 1  # Mover para cima
+            else:
+                return 1 if np.random.rand() > 0.5 else 2  # Movimento aleatório
+        
+        return 0  # Ficar parado se não há perigo
