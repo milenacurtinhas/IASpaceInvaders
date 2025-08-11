@@ -39,6 +39,6 @@ def test_agent(weights: np.ndarray, num_tests: int = 30, render: bool = True):
 if __name__ == "__main__":
     if os.path.exists('best_bat_weights.npy'):
         best_trained_weights = np.load('best_bat_weights.npy')
-        test_agent(best_trained_weights, num_tests=30, render=True)
+        test_agent(best_trained_weights, num_tests=30, render=False)
     else:
         print("Arquivo 'best_bat_weights.npy' não encontrado. Execute main_bat.py primeiro.")
