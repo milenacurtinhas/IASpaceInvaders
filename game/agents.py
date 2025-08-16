@@ -177,6 +177,7 @@ class NeuralNetworkAgent(Agent):
             'architecture': '27+1 → 16 → 8 → 3'
         }
 
+
 class RuleBasedAgent(Agent):
     """
     Agente baseado em regras para comparação.

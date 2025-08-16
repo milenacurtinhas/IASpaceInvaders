@@ -8,21 +8,24 @@ import sys
 import time
 import matplotlib.pyplot as plt
 
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+
+# Parâmetros otimizados
 POPULATION_SIZE = 100
 GENERATIONS = 1000
 MAX_TIME = 12 * 3600  # 12 horas
 WEIGHT_DIM = 611  # MUDANÇA: Nova arquitetura otimizada (28*16 + 17*8 + 9*3)
 
+
 def game_fitness_function(population: np.ndarray) -> np.ndarray:
-    """Função de fitness otimizada - MUDANÇA: 3→5 jogos + FPS maior"""
-    game_config = GameConfig(num_players=len(population), fps=120)  # FPS aumentado
+    """Função de fitness otimizada"""
+    game_config = GameConfig(num_players=len(population), fps=120)
     agents = [NeuralNetworkAgent(weights) for weights in population]
     total_scores = np.zeros(len(agents))
     
-    # MUDANÇA PRINCIPAL: De 3 para 5 jogos para reduzir ruído
-    for i in range(5):  # Era 3
+    for i in range(5):
         game = SurvivalGame(config=game_config, render=False)
         
         while not game.all_players_dead():
@@ -42,9 +45,9 @@ def game_fitness_function(population: np.ndarray) -> np.ndarray:
         for idx, player in enumerate(game.players):
             total_scores[idx] += player.score
     
-    # CORREÇÃO: Dividir por 5, não por 3
     average_scores = total_scores / 5    
     return average_scores
+
 
 def advanced_fitness_function(weights: np.ndarray) -> float:
     """Fitness avançada que considera sobrevivência + consistência"""
@@ -52,7 +55,7 @@ def advanced_fitness_function(weights: np.ndarray) -> float:
     survival_times = []
     
     for _ in range(5):
-        game_config = GameConfig(num_players=1, fps=120)
+        game_config = GameConfig()
         game = SurvivalGame(config=game_config, render=False)
         agent = NeuralNetworkAgent(weights)
         
@@ -73,25 +76,26 @@ def advanced_fitness_function(weights: np.ndarray) -> float:
     
     return avg_score + consistency_bonus + survival_bonus
 
+
 def train_and_test():
     print("\n--- Iniciando Treinamento Otimizado com Bat Algorithm ---")
     print(f"Parâmetros: População={POPULATION_SIZE}, Gerações={GENERATIONS}, Pesos={WEIGHT_DIM}")
     
-    # MUDANÇA: Usa nova arquitetura otimizada (611 pesos)
+    # Usa arquitetura otimizada (611 pesos)
     ba = BatAlgorithm(
         population_size=POPULATION_SIZE,
-        weight_dim=WEIGHT_DIM,  # Nova dimensão otimizada
+        weight_dim=WEIGHT_DIM,  
         fmin=0,
-        fmax=1,      # MUDANÇA: De 2 para 1 (exploração mais controlada)
-        alpha=0.95,  # MUDANÇA: De 0.9 para 0.95 (mais conservador)
-        gamma=0.95   # MUDANÇA: De 0.9 para 0.95 (mais conservador)
+        fmax=1,      
+        alpha=0.95,  
+        gamma=0.95   
     )
     
     best_weights_overall = None
     best_fitness_overall = -np.inf
     evolution_scores = []
     
-    # ADIÇÃO: Variáveis de monitoramento e early stopping
+    # Variáveis de monitoramento e early stopping
     best_fitness_history = []
     stagnation_counter = 0
     max_stagnation = 50
@@ -106,7 +110,7 @@ def train_and_test():
         
         start_generation = time.time()
         
-        # MUDANÇA: Passa parâmetros de geração para o algoritmo adaptativo
+        # Passa parâmetros de geração para o algoritmo adaptativo
         current_best_weights, current_best_fitness = ba.evolve(
             game_fitness_function, 
             parallel=True,
@@ -119,14 +123,14 @@ def train_and_test():
             best_weights_overall = current_best_weights
             print(f'NOVO RECORDE! Geração {generation+1}: Fitness = {best_fitness_overall:.2f}')
             np.save("best_bat_weights.npy", best_weights_overall)
-            stagnation_counter = 0  # Reset contador de estagnação
+            stagnation_counter = 0  
         else:
             stagnation_counter += 1
         
         evolution_scores.append(best_fitness_overall)
         end = time.time()
         
-        # ADIÇÃO: Monitoramento detalhado a cada 10 gerações
+        # Monitoramento detalhado a cada 10 gerações
         if generation % 10 == 0:
             stats = ba.get_algorithm_stats()
             print(f"Gen {generation + 1}/{GENERATIONS} | "
@@ -141,12 +145,12 @@ def train_and_test():
                   f"Melhor: {best_fitness_overall:.2f} | "
                   f"({end-start_generation:.1f}s)")
         
-        # ADIÇÃO: Early stopping por estagnação
+        # Early stopping por estagnação
         if len(best_fitness_history) > 10:
             recent_improvement = (best_fitness_overall - 
                                 np.mean(best_fitness_history[-10:]))
             
-            if recent_improvement < 0.1:  # Pouca melhoria
+            if recent_improvement < 0.1:  
                 stagnation_counter += 1
             
         if stagnation_counter >= max_stagnation:
@@ -165,10 +169,9 @@ def train_and_test():
         np.save("best_bat_weights.npy", best_weights_overall)
         print("Melhores pesos salvos em 'best_bat_weights.npy'")
         
-        # Plota evolução
         plot_evolution(evolution_scores)
         
-        # MUDANÇA: Teste rápido com 3 jogos primeiro
+        # Teste rápido com 3 jogos primeiro
         print("\n--- Teste Rápido (3 jogos) ---")
         quick_test_scores = []
         for i in range(3):
@@ -188,19 +191,18 @@ def train_and_test():
         
         # Teste completo com visualização
         print("\n--- Iniciando Teste Completo (30 jogos) ---")
-        test_agent(best_weights_overall, num_tests=30, render=True)
+        test_agent(best_weights_overall, num_tests=30, render=False)
     else:
         print("Nenhum peso ótimo encontrado.")
+
 
 def plot_evolution(scores):
     """Plota gráfico melhorado da evolução do agente"""
     plt.figure(figsize=(12, 8))
     
-    # Gráfico principal
     plt.subplot(2, 1, 1)
     plt.plot(range(1, len(scores)+1), scores, 'b-', linewidth=2, label='Melhor Fitness')
     
-    # Adiciona linha de tendência se houver dados suficientes
     if len(scores) > 10:
         z = np.polyfit(range(1, len(scores)+1), scores, 1)
         p = np.poly1d(z)
@@ -213,7 +215,6 @@ def plot_evolution(scores):
     plt.legend()
     plt.grid(True, alpha=0.3)
     
-    # Gráfico de melhoria por geração
     plt.subplot(2, 1, 2)
     if len(scores) > 1:
         improvements = [scores[i] - scores[i-1] for i in range(1, len(scores))]
@@ -229,6 +230,7 @@ def plot_evolution(scores):
     plt.show()
     print("Gráfico salvo como 'bat_evolution.png'")
 
+
 def print_training_summary():
     """Imprime resumo das configurações de treinamento"""
     print("=" * 60)
@@ -242,6 +244,7 @@ def print_training_summary():
     print(f"Tempo limite: {MAX_TIME/3600:.0f} horas")
     print(f"Parada antecipada: 50 gerações sem melhoria")
     print("=" * 60)
+
 
 if __name__ == "__main__":
     print_training_summary()

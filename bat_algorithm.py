@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Tuple
 
+
 class BatAlgorithm:
     def __init__(self, population_size: int, weight_dim: int, fmin: float = 0, 
                  fmax: float = 1, alpha: float = 0.95, gamma: float = 0.95):  # Parâmetros mais conservadores
@@ -8,7 +9,7 @@ class BatAlgorithm:
         self.weight_dim = weight_dim
         self.fmin = fmin
         self.fmax = fmax
-        self.initial_fmax = fmax  # Guarda valor inicial para adaptação
+        self.initial_fmax = fmax
         self.alpha = alpha
         self.gamma = gamma
         self.population = self._initialize_population()
@@ -18,10 +19,10 @@ class BatAlgorithm:
         self.frequencies = np.zeros(self.population_size)
         
         # Parâmetros adaptativos mais inteligentes
-        self.loudness = np.random.uniform(0.8, 1.2, self.population_size)  # A0 - range mais restrito
-        self.pulse_rate = np.random.uniform(0.1, 0.3, self.population_size)  # r0 - começar baixo
-        self.initial_loudness = self.loudness.copy()  # Para reset se necessário
-        self.initial_pulse_rate = self.pulse_rate.copy()  # Para Eq. 6
+        self.loudness = np.random.uniform(0.8, 1.2, self.population_size)
+        self.pulse_rate = np.random.uniform(0.1, 0.3, self.population_size)
+        self.initial_loudness = self.loudness.copy()
+        self.initial_pulse_rate = self.pulse_rate.copy()
         
         self.iteration = 0
         
@@ -144,7 +145,7 @@ class BatAlgorithm:
             self.stagnation_counter = 0
             self.last_best_fitness = best_fitness
         
-        # Algoritmo dos morcegos otimizado
+        # Algoritmo dos morcegos
         for i in range(self.population_size):
             # Eq. 2: Atualiza frequência com variação adaptativa
             beta = np.random.uniform(0, 1)

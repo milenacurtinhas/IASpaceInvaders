@@ -3,7 +3,7 @@ from bat_algorithm import BatAlgorithm
 
 def sphere_function(x):
     """Função esfera - mínimo global em x=0"""
-    return -np.sum(x**2)  # Negativo porque BA maximiza
+    return -np.sum(x**2)
 
 def rastrigin_function(x):
     """Função Rastrigin - múltiplos mínimos locais"""
